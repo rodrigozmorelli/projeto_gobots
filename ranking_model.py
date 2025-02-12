@@ -112,6 +112,7 @@ def get_item_quality_score(item_id):
     else:
         return None
 
+#Função para obter score de experiência de um item
 def get_purchase_experience_score(item_id, locale='pt_BR'):
     url = f'https://api.mercadolibre.com/reputation/items/{item_id}/purchase_experience/integrators'
     headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
@@ -122,6 +123,23 @@ def get_purchase_experience_score(item_id, locale='pt_BR'):
     if response.status_code == 200:
         data = response.json()
         return data.get('reputation', {}).get('value')
+    else:
+        return None
+    
+#Função para obter estoque de um item
+def get_item_stock(item_id):
+    url1 = f'https://api.mercadolibre.com/items/{item_id}'
+    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
+    response1 = requests.get(url1, headers=headers)
+    user_product_id = response1.json().get('user_product_id')
+
+    url2 = f'https://api.mercadolibre.com/user-products/{user_product_id}/stock'
+    response2 = requests.get(url2, headers=headers)
+    
+    if response2.status_code == 200:
+        stock_data = response2.json()
+        total_stock = sum(location['quantity'] for location in stock_data['locations'])
+        return total_stock
     else:
         return None
 
@@ -144,7 +162,8 @@ def get_visits_sales_and_price():
             sales = get_item_sales(item_id, date_from, date_to)
             details = get_item_details(item_id)
             quality_score = get_item_quality_score(item_id)
-            purchase_experience_score = get_purchase_experience_score(item_id)
+            purchase_experience_score = get_purchase_experience_score(item_id),
+            stock = get_item_stock(item_id)
             
             if details:
                 results.append({
@@ -154,7 +173,8 @@ def get_visits_sales_and_price():
                     'visits': visits,
                     'sales': sales,
                     'quality_score': quality_score,
-                    'purchase_experience_score': purchase_experience_score
+                    'purchase_experience_score': purchase_experience_score,
+                    'stock': stock
                 })
         
         # Criar um DataFrame a partir dos resultados
