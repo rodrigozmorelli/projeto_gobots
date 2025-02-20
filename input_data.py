@@ -28,7 +28,7 @@ HEADERS = {
 }
 BASE_URL = "https://api.mercadolibre.com"
 
-DAYS_WINDOW = 90
+DAYS_WINDOW = 180
 
 
 # ======================================================
@@ -94,7 +94,8 @@ def get_item_details(item_id):
         data = response.json()
         return {
             'title': data['title'],
-            'price': data['price']
+            'price': data['price'],
+            'permalink' : data['permalink']
         }
     else:
         return None
@@ -142,6 +143,32 @@ def get_item_stock(item_id):
         return total_stock
     else:
         return None
+    
+#Função para obter url da imagem do item
+def get_item_image_url(item_id):
+    url = f"https://api.mercadolibre.com/items/{item_id}"
+    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code == 200:
+        data = response.json()
+        if data["pictures"] and len(data["pictures"]) > 0:
+            return data["pictures"][0]["secure_url"]
+        else:
+            return None
+    else:
+        return None
+    
+#Obter posicionamento do item
+def get_item_position(item_id):
+    url = f"https://api.mercadolibre.com/highlights/MLB/item/{item_id}"
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        data = response.json()
+        return data['position']
+    else:
+        return None
 
 # Função principal
 def get_visits_sales_and_price():
@@ -164,17 +191,22 @@ def get_visits_sales_and_price():
             quality_score = get_item_quality_score(item_id)
             purchase_experience_score = get_purchase_experience_score(item_id),
             stock = get_item_stock(item_id)
+            image_url = get_item_image_url(item_id)
+            position = get_item_position(item_id)
             
             if details:
                 results.append({
                     'item_id': item_id,
                     'title': details['title'],
                     'price': details['price'],
+                    'permalink': details['permalink'],
                     'visits': visits,
                     'sales': sales,
                     'quality_score': quality_score,
                     'purchase_experience_score': purchase_experience_score,
-                    'stock': stock
+                    'stock': stock,
+                    'image_url':image_url,
+                    'position': position
                 })
         
         # Criar um DataFrame a partir dos resultados
