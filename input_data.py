@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
+import json
 
 # ======================================================
 # 1) AUTENTICAÇÃO & CONFIG
@@ -20,25 +21,30 @@ def extract_user_id_from_token(access_token):
     """
     return access_token.split("-")[-1]
 
-ACCESS_TOKEN = load_access_token("token.txt")
-USER_ID = extract_user_id_from_token(ACCESS_TOKEN)
+def get_go_bots_api_response():
+    url = 'https://askhere.gobots.com.br/ml/all'
+    access_token = load_access_token('gobots_token.txt')
+    headers = {'Authorization': f'Bearer {access_token}'}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        return data
 
-HEADERS = {
-    "Authorization": f"Bearer {ACCESS_TOKEN}"
-}
-BASE_URL = "https://api.mercadolibre.com"
-
-DAYS_WINDOW = 180
-
+def get_access_token_from_gobots_api(user_id, data):
+    for item in data:
+        if item.get('user_id') == user_id:
+            return item.get('access_token')
+    return None
+    
 
 # ======================================================
 # 2) OBTER VISITAS, VENDAS E PREÇO POR PRODUTO
 # ======================================================
 
 #Função para obter os itens do vendedor
-def get_all_active_items(user_id, access_token):
+def get_all_active_items(user_id):
     url = f'https://api.mercadolibre.com/users/{user_id}/items/search'
-    headers = {'Authorization': f'Bearer {access_token}'}
+    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
     params = {'status': 'active'}
     all_items = []
     
@@ -170,8 +176,25 @@ def get_item_position(item_id):
     else:
         return None
 
+#Obter informações da loja
+
+def get_store_info(user_id):
+    url = f'https://api.mercadolibre.com/users/{user_id}'
+    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        data = response.json()
+        return {
+            'store_name' : data.get('nickname'),
+            'store_permalink' : data.get('permalink')
+        }
+    else:
+        return None
+
+
 # Função principal
-def get_visits_sales_and_price():
+def build_output():
     # Definir período (último mês)
     end_date = datetime.now()
     start_date = end_date - timedelta(days=DAYS_WINDOW) 
@@ -179,7 +202,8 @@ def get_visits_sales_and_price():
     date_to = end_date.strftime('%Y-%m-%dT%H:%M:%S.000-00:00')
 
     # Obter lista de todos os itens ativos do vendedor
-    items = get_all_active_items(USER_ID, ACCESS_TOKEN)
+    items = get_all_active_items(USER_ID)
+    store_info = get_store_info(USER_ID)
     
     if items:
         results = []  # Lista para armazenar os resultados
@@ -196,6 +220,8 @@ def get_visits_sales_and_price():
             
             if details:
                 results.append({
+                    'store_name': store_info['store_name'],
+                    'store_permalink': store_info['store_permalink'],
                     'item_id': item_id,
                     'title': details['title'],
                     'price': details['price'],
@@ -230,10 +256,36 @@ def calculate_metrics(df):
     return df
 
 # Executar a função principal e imprimir o resultado
-df_dados = get_visits_sales_and_price()
+with open('user_ids.txt', 'r') as file:
+    user_ids = file.read().split(',')
 
-if df_dados is not None:
-    df_resultados = calculate_metrics(df_dados)
-    df_resultados.to_csv('ranking.csv', encoding='utf-8')
-else:
-    print("Não foi possível obter os dados.")
+
+user_ids = [user_id.strip() for user_id in user_ids]
+user_ids = [int(x) for x in user_ids]
+
+go_bots_api_response = get_go_bots_api_response()
+
+# with open("go_bots_api_output.txt", "w") as file:
+#     file.write(repr(go_bots_api_response))
+
+# Execute the function for each user_id
+for user_id in user_ids:
+    ACCESS_TOKEN = get_access_token_from_gobots_api(user_id, go_bots_api_response)
+    print(ACCESS_TOKEN)
+    USER_ID = user_id
+
+    HEADERS = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}"
+    }
+    BASE_URL = "https://api.mercadolibre.com"
+
+    DAYS_WINDOW = 30
+
+    df_dados = build_output()
+
+    if df_dados is not None:
+        df_resultados = calculate_metrics(df_dados)
+        nome_arquivo = df_resultados['store_name'].iloc[0] + '_' + str(USER_ID) + '.csv'
+        df_resultados.to_csv('output_tables\\' + nome_arquivo, encoding='utf-8')
+    else:
+        print("Não foi possível obter os dados.")

@@ -8,32 +8,39 @@
 </head>
 <body>
     <div class="text-center">
-        <img src="gobots_logo.png" alt="Centered Image" class="img-fluid"> 
+        <img src="https://gobots.ai/wp-content/uploads/2022/02/logo-gobots-solucao-platinum-mercado-livre-inteligencia-artificial-cor.png" alt="Centered Image" class="img-fluid"> 
     </div>
-    <div class="container mt-5">
-        <h1>Produtos recomendados</h1>
+    <div class="container mt-5"></div>
+      <h1 class="text-center">Relatório para campanha de Product Ads</h1>
+    <div class="container mt-5">        
+        <h2>Lista de produtos para <a href={{store_permalink}}>{{store_name}}</a></h2>
+        <p>Os produtos a seguir são divididos entre os produtos recomendados para uma campanha de Product Ads e todos os outros produtos que tiveram pelo menos uma venda no período considerado (últimos 30 dias).</p>
+        <p> O Mercado Livre possui um <a href="https://vendedores.mercadolivre.com.br/nota/como-criar-campanhas-publicitarias-no-product-ads">tutorial explicativo</a> sobre quais são os passos necessários para a criação de uma campanha de Product Ads</p>
+    </div>
+    <div class="container mt-5">  
+        <h3>Produtos sugeridos para campanhas de Ads</h3>
         <table class="table">
             <thead class="table-dark">
               <tr>
-                <th class="text-center">Produto</th>
-                {% for column in df.columns %}
-                    {% if column != 'image_url' and column != 'permalink' %}
-                        <th class="text-center">{{ column }}</th>
+                <th class="text-center align-middle">Produto</th>
+                {% for column in df_rec.columns %}
+                    {% if column != 'image_url' and column != 'permalink'%}
+                        <th class="text-center align-middle">{{ column }}</th>
                     {% endif %}
                 {% endfor %}
               </tr>
             </thead>
             <tbody>
-                {% for _, row in df.iterrows() %}
+                {% for _, row in df_rec.iterrows() %}
                   <tr>
-                    <td class="text-center">
+                    <td class="text-center align-middle">
                         <a href="{{ row['permalink'] }}">
                           <img src="{{ row['image_url'] }}" alt="Product Image" class="img-fluid" style="max-width: 100px;">
                         </a>
                       </td>
                     {% for column, value in row.items() %}
-                        {% if column != 'image_url' and column != 'permalink' %}
-                            <td class="text-center">                                
+                        {% if column != 'image_url' and column != 'permalink'%}
+                            <td class="text-center align-middle">                                
                                 {{ value }}                                
                             </td>
                         {% endif %}
@@ -43,5 +50,38 @@
               </tbody>
         </table>
     </div>
+    <div class="container mt-5">
+      <h3>Outros produtos com vendas nos últimos 30 dias</h3>
+      <table class="table">
+          <thead class="table-dark">
+            <tr>
+              <th class="text-center align-middle">Produto</th>
+              {% for column in df_others.columns %}
+                  {% if column != 'image_url' and column != 'permalink'%}
+                      <th class="text-center align-middle">{{ column }}</th>
+                  {% endif %}
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+              {% for _, row in df_others.iterrows() %}
+                <tr>
+                  <td class="text-center align-middle">
+                      <a href="{{ row['permalink'] }}">
+                        <img src="{{ row['image_url'] }}" alt="Product Image" class="img-fluid" style="max-width: 100px;">
+                      </a>
+                    </td>
+                  {% for column, value in row.items() %}
+                      {% if column != 'image_url' and column != 'permalink'%}
+                          <td class="text-center align-middle">                                
+                              {{ value }}                                
+                          </td>
+                      {% endif %}
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+      </table>
+  </div>
 </body>
 </html>
