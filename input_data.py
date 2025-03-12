@@ -81,7 +81,7 @@ def get_all_active_items():
 
     return todos_os_itens
 
-# Função para obter as vendas de um item
+# Função para obter as os itens de um vendedor através da API de orders
 def get_all_items_with_sales(date_from, date_to):
     url = f'https://api.mercadolibre.com/orders/search?seller={USER_ID}&order.status=paid&order.date_created.from={date_from}&order.date_created.to={date_to}'
     headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
@@ -298,8 +298,6 @@ user_ids = [int(x) for x in user_ids]
 
 go_bots_api_response = get_go_bots_api_response()
 
-# with open("go_bots_api_output.txt", "w") as file:
-#     file.write(repr(go_bots_api_response))
 
 # Execute the function for each user_id
 for user_id in user_ids:
