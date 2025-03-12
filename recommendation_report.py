@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
+import requests
 
 def read_input(input_file):
     df =  pd.read_csv(input_file)
@@ -51,6 +52,7 @@ def select_and_rename(df):
     df = df.rename(columns={'item_id':'ID do Produto','title':'Descrição','quality_score':'Score de Qualidade','stock':'Estoque','position':'Posição Mais Vendidos','price':'Preço','sales':'Vendas','conversion':'Conversão','sales_potential':'Receita p/ Click'})
 
     return df
+
 
 # Listar todos os arquivos na pasta
 path = 'output_tables'
