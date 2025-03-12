@@ -31,10 +31,14 @@ def filter_input(df):
     #Split the products into 2 groups
     df['product_group'] = -1
     df.loc[df['sales'] >= 1, 'product_group'] = 1
+
+    #First, try to recommend only products that represent more than 10% of the sales
     if df[df['cumulative_sales'] >= 0.1].shape[0] > 0:
         df.loc[df['cumulative_sales'] >= 0.1, 'product_group'] = 2
+    #If not, recommend products that represent more than 5% of the sales
     elif df[df['cumulative_sales'] >= 0.05].shape[0] > 0:
         df.loc[df['cumulative_sales'] >= 0.05, 'product_group'] = 2
+    #If not, recommend the top 3 products
     else:
         df = df.sort_values(by='sales', ascending=False)
         df.loc[:3, 'product_group'] = 2
