@@ -1,7 +1,10 @@
-import requests
-import pandas as pd
+import asyncio
 from datetime import datetime, timedelta
-import json
+import os
+
+import aiohttp
+import pandas as pd
+
 
 # ======================================================
 # 1) AUTENTICAÇÃO & CONFIG
@@ -21,14 +24,14 @@ def extract_user_id_from_token(access_token):
     """
     return access_token.split("-")[-1]
 
-def get_go_bots_api_response():
+async def get_go_bots_api_response(session):
     url = 'https://askhere.gobots.com.br/ml/all'
     access_token = load_access_token('gobots_token.txt')
     headers = {'Authorization': f'Bearer {access_token}'}
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        data = response.json()
-        return data
+    async with session.get(url, headers=headers) as response:
+        if response.status == 200:
+            return await response.json()
+        return None
 
 def get_access_token_from_gobots_api(user_id, data):
     for item in data:
@@ -41,239 +44,189 @@ def get_access_token_from_gobots_api(user_id, data):
 # 2) OBTER VISITAS, VENDAS E PREÇO POR PRODUTO
 # ======================================================
 
-#Função para obter os itens do vendedor
-def get_all_active_items():
-    """
-    Retorna a lista de todos os ITEM_IDs do vendedor,
-    lidando com a paginação sem ultrapassar o total de itens
-    e evitando erros com offset maior que 1000.
-    """
-    url_base = f"{BASE_URL}/users/{USER_ID}/items/search"
-    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
-    offset = 0
-    limit = 50
-    todos_os_itens = []
-
-    while True:
-        params = {"offset": offset, "limit": limit, "status":"active"}
-        resp = requests.get(url_base, headers=headers, params=params)
-        resp.raise_for_status()
-        
-        data = resp.json()
-        item_ids = data.get("results", [])
-        todos_os_itens.extend(item_ids)
-
-        paging = data.get("paging", {})
-        total_itens = paging.get("total", 0)
-
-
-        # Se veio menos itens que o limite ou já atingimos o total, interrompe.
-        if len(item_ids) < limit or (offset + limit) >= total_itens:
-            print("[INFO] Fim da paginação ou todos os itens já listados.")
-            break
-
-        # Evite offset acima de 1000 (muitas vezes a API não permite)
-        if offset + limit >= 1000:
-            print("[WARN] Offset atingiu 1000. Interrompendo para evitar erro 400.")
-            break
-
-        offset += limit
-
-    return todos_os_itens
-
 # Função para obter as os itens de um vendedor através da API de orders
-def get_all_items_with_sales(date_from, date_to):
-    url = f'https://api.mercadolibre.com/orders/search?seller={USER_ID}&order.status=paid&order.date_created.from={date_from}&order.date_created.to={date_to}'
-    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
+async def get_all_items_with_sales(session, date_from, date_to, user_id, access_token):
+    url = 'https://api.mercadolibre.com/orders/search'
+    headers = {'Authorization': f'Bearer {access_token}'}
+    params = {
+        'seller': user_id,
+        'order.status': 'paid',
+        'order.date_created.from': date_from,
+        'order.date_created.to': date_to,
+        'limit': 50,
+
+    }
+    all_items = []        
     offset = 0
-    limit = 50
-    all_items = []
-    
+
     while True:
-        params = {"offset": offset, "limit": limit}
-        response = requests.get(url, headers=headers, params=params)   
-        if response.status_code != 200:
-            print(f"Erro na requisição: {response.status_code}")
-            break
-        
-        data = response.json()
-        results = data['results']
-        for order in results:
-            item_id = order["order_items"][0]["item"]["id"]
-            if item_id not in all_items:
-                all_items.append(item_id)
-           
+        params['offset'] = offset
+        async with session.get(url, headers=headers, params=params) as response:
+            if response.status != 200:
+                print(f"Erro na requisição: {response.status}, user id: {user_id}")
+                break
+            
+            data = await response.json()
+            results = data.get('results', [])
+            for order in results:
+                item_id = order["order_items"][0]["item"]["id"]
+                if item_id not in all_items:
+                    all_items.append(item_id)
 
-        paging = data.get("paging", {})
-        print(paging)
-        total_items = paging.get("total", 0)
+            paging = data.get('paging', {})
+            # print(paging)
+            total_items = paging.get('total', 0)
 
-        if total_items < limit or (offset + limit) >= total_items:
-            print("[INFO] Fim da paginação ou todos os itens já listados.")
-            break
+            # Se veio menos itens que o limite ou já atingimos o total, interrompe.
+            if total_items < params['limit'] or (offset + params['limit']) >= total_items:
+                # print("[INFO] Fim da paginação ou todos os itens já listados.")
+                break
 
-        # Evite offset acima de 1000 (muitas vezes a API não permite)
-        if offset + limit >= 1000:
-            print("[WARN] Offset atingiu 1000. Interrompendo para evitar erro 400.")
-            break
-
-        offset += limit
+            # Evite offset acima de 1000 (muitas vezes a API não permite)
+            # if (offset + params['limit']) >= 1000:
+            #     print("[WARN] Offset limit reached 1000, stopping to avoid error.")
+            #     break
+            offset += params['limit']
     
     return all_items
 
 # Função para obter as visitas de um item
-def get_item_visits(item_id, date_from, date_to):
-    url = f'https://api.mercadolibre.com/items/{item_id}/visits?date_from={date_from}&date_to={date_to}'
-    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
-    
-    response = requests.get(url, headers=headers)
-
-    if response.status_code == 200:
-        return response.json()['total_visits']
-    else:
+async def get_item_visits(session, item_id, date_from, date_to, access_token):
+    url = f'https://api.mercadolibre.com/items/{item_id}/visits'
+    headers = {'Authorization': f'Bearer {access_token}'}
+    params = {'date_from': date_from, 'date_to': date_to}
+    async with session.get(url, headers=headers, params=params) as response:
+        if response.status == 200:
+            data = await response.json()
+            return data.get('total_visits')
         return None
 
 # Função para obter as vendas de um item
-def get_item_sales(item_id, date_from, date_to):
-    url = f'https://api.mercadolibre.com/orders/search?seller={USER_ID}&item={item_id}&order.date_created.from={date_from}&order.date_created.to={date_to}'
-    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
-
-    response = requests.get(url, headers=headers)
-
-    if response.status_code == 200:
-        total_sales = response.json()['paging']['total']
-        return total_sales
-    else:
+async def get_item_sales(session, item_id, date_from, date_to, user_id, access_token):
+    url = 'https://api.mercadolibre.com/orders/search'
+    headers = {'Authorization': f'Bearer {access_token}'}
+    params = {
+        'seller': user_id,
+        'item': item_id,
+        'order.status': 'paid',
+        'order.date_created.from': date_from,
+        'order.date_created.to': date_to
+    }
+    async with session.get(url, headers=headers, params=params) as response:
+        if response.status == 200:
+            data = await response.json()
+            return data.get('paging', {}).get('total', 0)
         return None
 
 # Função para obter detalhes do item, incluindo o preço
-def get_item_details(item_id):
+async def get_item_details(session, item_id, access_token):
     url = f'https://api.mercadolibre.com/items/{item_id}'
-    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
-
-    response = requests.get(url, headers=headers)
-
-    if response.status_code == 200:
-        data = response.json()
-        return {
-            'title': data['title'],
-            'price': data['price'],
-            'permalink' : data['permalink'],
-            'image_url' : data["pictures"][0]["secure_url"] if data["pictures"] and len(data["pictures"]) > 0 else None
-        }
-    else:
+    headers = {'Authorization': f'Bearer {access_token}'}
+    async with session.get(url, headers=headers) as response:
+        if response.status == 200:
+            data = await response.json()
+            return {
+                'title': data.get('title'),
+                'price': data.get('price'),
+                'permalink': data.get('permalink'),
+                'image_url': data["pictures"][0]["secure_url"] if data.get("pictures") else None
+            }
         return None
 
 # Função para obter score de qualidade do item
-def get_item_quality_score(item_id):
-    url = f'https://api.mercadolibre.com/item/{item_id}/performance'
-    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
-    
-    response = requests.get(url, headers=headers)
-    
-    if response.status_code == 200:
-        data = response.json()
-        return data.get('score')
-    else:
+async def get_item_quality_score(session, item_id, access_token):
+    url = f'https://api.mercadolibre.com/items/{item_id}/performance'
+    headers = {'Authorization': f'Bearer {access_token}'}
+    async with session.get(url, headers=headers) as response:
+        if response.status == 200:
+            data = await response.json()
+            return data.get('score')
         return None
     
 #Função para obter estoque de um item
-def get_item_stock(item_id):
+async def get_item_stock(session, item_id, access_token):
     url = f'https://api.mercadolibre.com/items/{item_id}'
-    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
-
-    response = requests.get(url, headers=headers)
-    
-    if response.status_code == 200:
-        data = response.json()
-        if "available_quantity" in data:
-            stock = data["available_quantity"]
-        elif "initial_quantity" in data:
-            stock = data["initial_quantity"]
-        elif "variations" in data and data["variations"]:
-            # Se houver variações, soma o estoque de todas
-            stock = sum(var.get("available_quantity", 0) for var in data["variations"])
-        return stock
-    else:
+    headers = {'Authorization': f'Bearer {access_token}'}
+    async with session.get(url, headers=headers) as response:
+        if response.status == 200:
+            data = await response.json()
+            if "available_quantity" in data:
+                return data["available_quantity"]
+            elif "initial_quantity" in data:
+                return data["initial_quantity"]
+            elif data.get("variations"):
+                # Se houver variações, soma o estoque de todas
+                return sum(var.get("available_quantity", 0) for var in data["variations"])
         return None
     
     
 #Obter posicionamento do item
-def get_item_position(item_id):
+async def get_item_position(session, item_id):
     url = f"https://api.mercadolibre.com/highlights/MLB/item/{item_id}"
-    response = requests.get(url)
-
-    if response.status_code == 200:
-        data = response.json()
-        return data['position']
-    else:
+    async with session.get(url) as response:
+        if response.status == 200:
+            data = await response.json()
+            return data.get('position')
         return None
 
 #Obter informações da loja
-def get_store_info(user_id):
+async def get_store_info(session, user_id, access_token):
     url = f'https://api.mercadolibre.com/users/{user_id}'
-    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
-    response = requests.get(url, headers=headers)
-
-    if response.status_code == 200:
-        data = response.json()
-        return {
-            'store_name' : data.get('nickname'),
-            'store_permalink' : data.get('permalink')
-        }
-    else:
+    headers = {'Authorization': f'Bearer {access_token}'}
+    async with session.get(url, headers=headers) as response:
+        if response.status == 200:
+            data = await response.json()
+            return {
+                'store_name': data.get('nickname'),
+                'store_permalink': data.get('permalink')
+            }
         return None
 
+async def process_item(session, item_id, date_from, date_to, user_id, access_token, store_info):
+    sales, visits, details, quality_score, stock, position = await asyncio.gather(
+        get_item_sales(session, item_id, date_from, date_to, user_id, access_token),
+        get_item_visits(session, item_id, date_from, date_to, access_token),
+        get_item_details(session, item_id, access_token),
+        get_item_quality_score(session, item_id, access_token),
+        get_item_stock(session, item_id, access_token),
+        get_item_position(session, item_id),
+    )
+    
+    if sales and sales > 0 and details:
+        return {
+            'store_name': store_info['store_name'],
+            'store_permalink': store_info['store_permalink'],
+            'item_id': item_id,
+            'title': details['title'],
+            'price': details['price'],
+            'permalink': details['permalink'],
+            'visits': visits,
+            'sales': sales,
+            'quality_score': quality_score,
+            'stock': stock,
+            'image_url': details['image_url'],
+            'position': position
+        }
+    return None
 
-# Função principal
-def build_output():
+async def build_output(session, user_id, access_token, days_window):
     # Definir período (último mês)
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=DAYS_WINDOW) 
+    start_date = end_date - timedelta(days=days_window)
     date_from = start_date.strftime('%Y-%m-%dT%H:%M:%S.000-00:00')
     date_to = end_date.strftime('%Y-%m-%dT%H:%M:%S.000-00:00')
 
-    # Obter lista de todos os itens ativos do vendedor
-    items = get_all_items_with_sales(date_from, date_to)
-    # items = group_orders(items)
-    print(items)
-    store_info = get_store_info(USER_ID)
+    items = await get_all_items_with_sales(session, date_from, date_to, user_id, access_token)
+    store_info = await get_store_info(session, user_id, access_token)
     
-    if items:
-        results = []  # Lista para armazenar os resultados
-        
-        for item in items:
-            item_id = item
-            sales = get_item_sales(item_id, date_from, date_to)
-            if sales > 0:                
-                visits = get_item_visits(item_id, date_from, date_to)            
-                details = get_item_details(item_id)
-                quality_score = get_item_quality_score(item_id)
-                stock = get_item_stock(item_id)
-                position = get_item_position(item_id)
-                
-                if details:
-                    results.append({
-                        'store_name': store_info['store_name'],
-                        'store_permalink': store_info['store_permalink'],
-                        'item_id': item_id,
-                        'title': details['title'],
-                        'price': details['price'],
-                        'permalink': details['permalink'],
-                        'visits': visits,
-                        'sales': sales,
-                        'quality_score': quality_score,
-                        'stock': stock,
-                        'image_url': details['image_url'],
-                        'position': position
-                    })
-        
-        # Criar um DataFrame a partir dos resultados
-        df = pd.DataFrame(results)
-        return df
-    else:
-        print('Erro ao obter lista de itens do vendedor')
-        return None
+    if not items or not store_info:
+        return pd.DataFrame()
+
+    tasks = [process_item(session, item_id, date_from, date_to, user_id, access_token, store_info) for item_id in items]
+    results = await asyncio.gather(*tasks)
+    valid_results = [res for res in results if res is not None]
+    
+    return pd.DataFrame(valid_results)
 
 # ======================================================
 # 3) CALCULAR AS MÉTRICAS E SALVAR O DATAFRAME EM CSV
@@ -288,36 +241,35 @@ def calculate_metrics(df):
 
     return df
 
-# Executar a função principal e imprimir o resultado
-with open('user_ids.txt', 'r') as file:
-    user_ids = file.read().split(',')
+async def process_user(session, user_id, go_bots_data):
+    access_token = get_access_token_from_gobots_api(user_id, go_bots_data)
+    if not access_token:
+        print(f"No access token for user {user_id}")
+        return
 
-
-user_ids = [user_id.strip() for user_id in user_ids]
-user_ids = [int(x) for x in user_ids]
-
-go_bots_api_response = get_go_bots_api_response()
-
-
-# Execute the function for each user_id
-for user_id in user_ids:
-    ACCESS_TOKEN = get_access_token_from_gobots_api(user_id, go_bots_api_response)
-    print(ACCESS_TOKEN)
-    USER_ID = user_id
-
-    HEADERS = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}"
-    }
-    BASE_URL = "https://api.mercadolibre.com"
-
-    DAYS_WINDOW = 30
-
-    df_dados = build_output()
-
-    if df_dados.shape[0] > 0:
-        df_resultados = calculate_metrics(df_dados)
-        nome_arquivo = df_resultados['store_name'].iloc[0] + '_' + str(USER_ID) + '.csv'
-        df_resultados.to_csv('output_tables\\' + nome_arquivo, encoding='utf-8')
-        print('Dados salvos com sucesso.')
+    df = await build_output(session, user_id, access_token, 30)
+    if df.shape[0] > 0:
+        df = calculate_metrics(df)
+        store_name = df['store_name'].iloc[0]
+        df.to_csv(f'output_tables/{store_name}_{user_id}.csv', index=False)
+        print(f"Processed user {user_id}")
     else:
-        print("Não foi possível obter os dados.")
+        print(f"No data for user {user_id}")
+
+async def main():
+    os.makedirs('output_tables', exist_ok=True)
+
+    with open('user_ids.txt', 'r') as f:
+        user_ids = [int(uid.strip()) for uid in f.read().split(',')]
+
+    async with aiohttp.ClientSession() as session:
+        go_bots_data = await get_go_bots_api_response(session)
+        if not go_bots_data:
+            print("Failed to fetch GoBots data")
+            return
+        
+        tasks = [process_user(session, uid, go_bots_data) for uid in user_ids]
+        await asyncio.gather(*tasks)
+
+if __name__ == "__main__":
+    asyncio.run(main())
