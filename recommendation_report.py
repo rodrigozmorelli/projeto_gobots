@@ -1,10 +1,18 @@
+import asyncio
+import io
 import os
+import subprocess
+
+import aiofiles
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
-import requests
+from playwright.async_api import async_playwright
 
-def read_input(input_file):
-    df =  pd.read_csv(input_file)
+
+async def read_input(input_file):
+    async with aiofiles.open(input_file, mode='r', encoding="utf-8") as f:
+        content = await f.read()
+        df = pd.read_csv(io.StringIO(content))
 
     df = filter_input(df)
 
@@ -53,38 +61,105 @@ def select_and_rename(df):
 
     return df
 
+async def convert_html_to_pdf(html_content, pdf_output_path):
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            
+            await page.set_content(html_content)
+            
+            pdf_bytes = await page.pdf(
+                width="14.8in",
+                height="21in",
+                margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
+                print_background=True
+            )
+            
+            await browser.close()
 
-# Listar todos os arquivos na pasta
-path = 'output_tables'
-files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+            ghostscript_cmd = [
+                'gswin64c',
+                '-sDEVICE=pdfwrite',
+                '-dPDFSETTINGS=/ebook',
+                '-dNOPAUSE',
+                '-dQUIET',
+                '-dBATCH',
+                '-sOutputFile=-',
+                '-'
+            ]
+            
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                ghostscript_cmd,
+                input=pdf_bytes,
+                capture_output=True,
+                check=True
+            )
+            
+            with open(pdf_output_path, 'wb') as f:
+                f.write(proc.stdout)
+            
+            print(f"Successfull PDF conversion: {pdf_output_path}")
+            return True
 
+    except Exception as e:
+        if os.path.exists(pdf_output_path):
+            os.remove(pdf_output_path)
+        print(f"Error during PDF conversion: {str(e)}")
+        return False
+async def process_file(semaphore, file):
+    try:
 
-for file in files:
-    # Set up Jinja2 environment
-    env = Environment(loader=FileSystemLoader('.'))
-    template = env.get_template('table_template.html')
+        # Set up Jinja2 environment
+        env = Environment(loader=FileSystemLoader('.'))
+        template = env.get_template('table_template.html')
 
-    # Get the input dataframe
-    df = read_input('output_tables\\' + file)
-    store_name = df['store_name'].iloc[0]
-    store_permalink = df['store_permalink'].iloc[0]
+        # Get the input dataframe
+        df = await read_input('output_tables\\' + file)
+        store_name = df['store_name'].iloc[0]
+        store_permalink = df['store_permalink'].iloc[0]
+        
+        df_rec = df[df['product_group'] == 2]
+        df_others = df[df['product_group'] == 1]
+        df_others.sort_values(by=['sales', 'sales_potential'], ascending=False)
 
-    df_rec = df[df['product_group'] == 2]
-    df_others = df[df['product_group'] == 1]
-    df_others.sort_values(by=['sales','sales_potential'], ascending=False, inplace=True)
+        df_rec = select_and_rename(df_rec)
+        df_others = select_and_rename(df_others)
 
-    df_rec = select_and_rename(df_rec)
-    df_others = select_and_rename(df_others)
-
-    # Render the template with the DataFrame
-    html_output = template.render(df_rec=df_rec,
-                                df_others=df_others,
-                                store_name=store_name,
-                                store_permalink=store_permalink,
-                                page_title_text='Recomendação de Produtos')
+        html_output = template.render(
+            df_rec=df_rec,
+            df_others=df_others,
+            store_name=store_name,
+            store_permalink=store_permalink,
+            page_title_text='Recomendação de Produtos'
+        )
+        
+        pdf_path = f'output_pdf/{file.removesuffix(".csv")}.pdf'
+        async with semaphore:
+            success = await convert_html_to_pdf(html_output, pdf_path)
+        
+        return f"Processed {file} - {'Success' if success else 'Failed'}"
     
-    output_path = 'output_html\\'+ file.removesuffix(".csv") + '.html'
+    except Exception as e:
+        return f"Error processing {file}: {str(e)}"
 
-    # Write the output to a file
-    with open(output_path, 'w') as f:
-        f.write(html_output)
+
+async def main():
+    MAX_WORKERS = 5
+    os.makedirs('output_pdf', exist_ok=True)
+
+    # Listar todos os arquivos na pasta
+    files = [f for f in os.listdir('output_tables') 
+             if f.endswith('.csv') and os.path.isfile(os.path.join('output_tables', f))]
+    
+    semaphore = asyncio.Semaphore(MAX_WORKERS)
+
+    tasks = [process_file(semaphore, file) for file in files]
+    results = await asyncio.gather(*tasks)
+    
+    for result in results:
+        print(result)
+
+if __name__ == '__main__':
+    asyncio.run(main())
