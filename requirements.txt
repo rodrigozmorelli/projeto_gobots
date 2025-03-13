@@ -2,3 +2,4 @@ Jinja2
 pandas
 aiohttp
 aiofiles
+playwright
