@@ -135,7 +135,7 @@ async def get_item_details(session, item_id, access_token):
 
 # Função para obter score de qualidade do item
 async def get_item_quality_score(session, item_id, access_token):
-    url = f'https://api.mercadolibre.com/items/{item_id}/performance'
+    url = f'https://api.mercadolibre.com/item/{item_id}/performance'
     headers = {'Authorization': f'Bearer {access_token}'}
     async with session.get(url, headers=headers) as response:
         if response.status == 200:
@@ -161,9 +161,10 @@ async def get_item_stock(session, item_id, access_token):
     
     
 #Obter posicionamento do item
-async def get_item_position(session, item_id):
+async def get_item_position(session, item_id, access_token):
     url = f"https://api.mercadolibre.com/highlights/MLB/item/{item_id}"
-    async with session.get(url) as response:
+    headers = {'Authorization': f'Bearer {access_token}'}
+    async with session.get(url, headers=headers) as response:
         if response.status == 200:
             data = await response.json()
             return data.get('position')
@@ -189,7 +190,7 @@ async def process_item(session, item_id, date_from, date_to, user_id, access_tok
         get_item_details(session, item_id, access_token),
         get_item_quality_score(session, item_id, access_token),
         get_item_stock(session, item_id, access_token),
-        get_item_position(session, item_id),
+        get_item_position(session, item_id, access_token),
     )
     
     if sales and sales > 0 and details:
