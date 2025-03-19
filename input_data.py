@@ -17,13 +17,6 @@ def load_access_token(caminho_arquivo="token.txt"):
         token = f.read().strip()
     return token
 
-def extract_user_id_from_token(access_token):
-    """
-    Extrai o user_id do token, assumindo que o formato do token seja:
-    'APP_USR-<...>-<...>-<...>-<USER_ID>'.
-    """
-    return access_token.split("-")[-1]
-
 async def get_go_bots_api_response(session):
     url = 'https://askhere.gobots.com.br/ml/all'
     access_token = load_access_token('gobots_token.txt')
