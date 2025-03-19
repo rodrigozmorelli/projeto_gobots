@@ -245,6 +245,8 @@ async def process_user(session, user_id, go_bots_data):
     if df.shape[0] > 0:
         df = calculate_metrics(df)
         store_name = df['store_name'].iloc[0]
+        df['quality_score'] = df['quality_score'].astype('Int64')
+        df['position'] = df['position'].astype('Int64')
         df.to_csv(f'output_tables/{store_name}_{user_id}.csv', index=False)
         print(f"Processed user {user_id}")
     else:
