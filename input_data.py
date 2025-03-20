@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 from datetime import datetime, timedelta
 import os
 
@@ -49,7 +50,8 @@ async def get_all_items_with_sales(session, date_from, date_to, user_id, access_
         'limit': 50,
 
     }
-    all_items = []        
+    all_items = []
+    item_sales = defaultdict(int)
     offset = 0
 
     while True:
@@ -65,6 +67,7 @@ async def get_all_items_with_sales(session, date_from, date_to, user_id, access_
                 item_id = order["order_items"][0]["item"]["id"]
                 if item_id not in all_items:
                     all_items.append(item_id)
+                item_sales[item_id] += 1
 
             paging = data.get('paging', {})
             # print(paging)
@@ -81,7 +84,8 @@ async def get_all_items_with_sales(session, date_from, date_to, user_id, access_
             #     break
             offset += params['limit']
     
-    return all_items
+    items_with_sales = [{"item_id": item_id, "sales": sales} for item_id, sales in item_sales.items()]
+    return items_with_sales
 
 # Função para obter as visitas de um item
 async def get_item_visits(session, item_id, date_from, date_to, access_token):
@@ -94,37 +98,34 @@ async def get_item_visits(session, item_id, date_from, date_to, access_token):
             return data.get('total_visits')
         return None
 
-# Função para obter as vendas de um item
-async def get_item_sales(session, item_id, date_from, date_to, user_id, access_token):
-    url = 'https://api.mercadolibre.com/orders/search'
+async def get_batch_item_details(session, item_ids, access_token):
+    url = 'https://api.mercadolibre.com/items'
+    params = {'ids': ','.join(item_ids)}
     headers = {'Authorization': f'Bearer {access_token}'}
-    params = {
-        'seller': user_id,
-        'item': item_id,
-        'order.status': 'paid',
-        'order.date_created.from': date_from,
-        'order.date_created.to': date_to
-    }
     async with session.get(url, headers=headers, params=params) as response:
-        if response.status == 200:
-            data = await response.json()
-            return data.get('paging', {}).get('total', 0)
-        return None
-
-# Função para obter detalhes do item, incluindo o preço
-async def get_item_details(session, item_id, access_token):
-    url = f'https://api.mercadolibre.com/items/{item_id}'
-    headers = {'Authorization': f'Bearer {access_token}'}
-    async with session.get(url, headers=headers) as response:
-        if response.status == 200:
-            data = await response.json()
-            return {
-                'title': data.get('title'),
-                'price': data.get('price'),
-                'permalink': data.get('permalink'),
-                'image_url': data["pictures"][0]["secure_url"] if data.get("pictures") else None
-            }
-        return None
+        if response.status != 200:
+            return {}
+        data = await response.json()
+        details = {}
+        for item in data:
+            if item.get('code') == 200:
+                item_data = item.get('body', {})
+                item_id = item_data.get('id')
+                stock = None
+                if "available_quantity" in item_data:
+                    stock = item_data["available_quantity"]
+                elif "initial_quantity" in item_data:
+                    stock = item_data["initial_quantity"]
+                elif item_data.get("variations"):
+                    stock = sum(var.get("available_quantity", 0) for var in item_data["variations"])
+                details[item_id] = {
+                    'title': item_data.get('title'),
+                    'price': item_data.get('price'),
+                    'permalink': item_data.get('permalink'),
+                    'image_url': item_data["pictures"][0]["secure_url"] if item_data.get("pictures") else None,
+                    'stock': stock,
+                }
+        return details
 
 # Função para obter score de qualidade do item
 async def get_item_quality_score(session, item_id, access_token):
@@ -135,24 +136,7 @@ async def get_item_quality_score(session, item_id, access_token):
             data = await response.json()
             return data.get('score')
         return None
-    
-#Função para obter estoque de um item
-async def get_item_stock(session, item_id, access_token):
-    url = f'https://api.mercadolibre.com/items/{item_id}'
-    headers = {'Authorization': f'Bearer {access_token}'}
-    async with session.get(url, headers=headers) as response:
-        if response.status == 200:
-            data = await response.json()
-            if "available_quantity" in data:
-                return data["available_quantity"]
-            elif "initial_quantity" in data:
-                return data["initial_quantity"]
-            elif data.get("variations"):
-                # Se houver variações, soma o estoque de todas
-                return sum(var.get("available_quantity", 0) for var in data["variations"])
-        return None
-    
-    
+
 #Obter posicionamento do item
 async def get_item_position(session, item_id, access_token):
     url = f"https://api.mercadolibre.com/highlights/MLB/item/{item_id}"
@@ -176,13 +160,10 @@ async def get_store_info(session, user_id, access_token):
             }
         return None
 
-async def process_item(session, item_id, date_from, date_to, user_id, access_token, store_info):
-    sales, visits, details, quality_score, stock, position = await asyncio.gather(
-        get_item_sales(session, item_id, date_from, date_to, user_id, access_token),
+async def process_item(session, item_id, date_from, date_to, access_token, store_info, sales, details):
+    visits, quality_score, position = await asyncio.gather(
         get_item_visits(session, item_id, date_from, date_to, access_token),
-        get_item_details(session, item_id, access_token),
         get_item_quality_score(session, item_id, access_token),
-        get_item_stock(session, item_id, access_token),
         get_item_position(session, item_id, access_token),
     )
     
@@ -197,7 +178,7 @@ async def process_item(session, item_id, date_from, date_to, user_id, access_tok
             'visits': visits,
             'sales': sales,
             'quality_score': quality_score,
-            'stock': stock,
+            'stock': details['stock'],
             'image_url': details['image_url'],
             'position': position
         }
@@ -216,7 +197,19 @@ async def build_output(session, user_id, access_token, days_window):
     if not items or not store_info:
         return pd.DataFrame()
 
-    tasks = [process_item(session, item_id, date_from, date_to, user_id, access_token, store_info) for item_id in items]
+    item_ids = [item["item_id"] for item in items]
+    details_dict = {}
+    max_batch_size = 20
+    for i in range(0, len(item_ids), max_batch_size):
+        batch_ids = item_ids[i:i+max_batch_size]
+        details_dict.update(await get_batch_item_details(session, batch_ids, access_token))
+
+    tasks = [
+        process_item(session, item["item_id"], date_from, date_to, 
+                     access_token, store_info, item["sales"], 
+                     details_dict.get(item["item_id"]))
+        for item in items
+    ]
     results = await asyncio.gather(*tasks)
     valid_results = [res for res in results if res is not None]
     
