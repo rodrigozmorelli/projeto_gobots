@@ -56,9 +56,11 @@ def filter_input(df):
 
 def select_and_rename(df):
 
-    df = df[['permalink','image_url','title','quality_score','stock','position','price','sales','conversion','sales_potential']]
-    df = df.rename(columns={'item_id':'ID do Produto','title':'Descrição','quality_score':'Score de Qualidade','stock':'Estoque','position':'Posição Mais Vendidos','price':'Preço','sales':'Vendas','conversion':'Conversão','sales_potential':'Receita p/ Click'})
+    df = df[['permalink','image_url','title','quality_score','stock','position','price','abc_class', 'suggest_ACOS', 'sales','conversion','sales_potential']]
+    df = df.rename(columns={'item_id':'ID do Produto','title':'Descrição','quality_score':'Score de Qualidade','stock':'Estoque','position':'Posição Mais Vendidos','price':'Preço', 'abc_class': "Curva A/B/C", 'suggest_ACOS': 'Sugestão de ACOS','sales':'Vendas','conversion':'Conversão','sales_potential':'Receita p/ Click'})
 
+    if 'Posição Mais Vendidos' in df.columns and (df['Posição Mais Vendidos'] == '-').all():
+        df = df.drop(columns=['Posição Mais Vendidos'])
     return df
 
 async def convert_html_to_pdf(html_content, pdf_output_path):
