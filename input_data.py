@@ -224,9 +224,29 @@ async def build_output(session, user_id, access_token, days_window):
 def calculate_metrics(df):
     df['conversion'] = df['sales']/df['visits']
     df['sales_potential'] = df['conversion'] * df['price']
-    df = df.sort_values(by='sales_potential', ascending=False)
-
-    return df
+    df_sorted = df.sort_values('sales_potential', ascending=False).reset_index(drop=True)
+    
+    total_potential = df_sorted['sales_potential'].sum()
+    
+    if total_potential == 0:
+        df_sorted['abc_class'] = 'C'
+        df_sorted['suggest_ACOS'] = '0 %'
+        return df_sorted
+    
+    df_sorted['cumulative_pct'] = (df_sorted['sales_potential'].cumsum() / total_potential) * 100
+    
+    df_sorted['abc_class'] = pd.cut(
+        df_sorted['cumulative_pct'],
+        bins=[0, 80, 95, 100],
+        labels=['A', 'B', 'C'],
+        include_lowest=True
+    )
+    
+    HARD_CODED_ACOS = '3-8%'
+    df_sorted['suggest_ACOS'] = HARD_CODED_ACOS
+    
+    df_sorted = df_sorted.drop(columns=['cumulative_pct'])
+    return df_sorted
 
 async def process_user(session, user_id, go_bots_data):
     access_token = get_access_token_from_gobots_api(user_id, go_bots_data)
