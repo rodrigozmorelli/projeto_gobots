@@ -227,25 +227,35 @@ def calculate_metrics(df):
     df_sorted = df.sort_values('sales_potential', ascending=False).reset_index(drop=True)
     
     total_potential = df_sorted['sales_potential'].sum()
+    total_items = len(df_sorted)
     
-    if total_potential == 0:
-        df_sorted['abc_class'] = 'C'
-        df_sorted['suggest_ACOS'] = '0 %'
-        return df_sorted
+    df_sorted['cum_value'] = (df_sorted['sales_potential'].cumsum() / total_potential).round(2)
+    df_sorted['cum_quantity'] = ((df_sorted.index + 1) / total_items).round(2)
     
-    df_sorted['cumulative_pct'] = (df_sorted['sales_potential'].cumsum() / total_potential) * 100
+    df_sorted['abc_class'] = 'C'
     
-    df_sorted['abc_class'] = pd.cut(
-        df_sorted['cumulative_pct'],
-        bins=[0, 80, 95, 100],
-        labels=['A', 'B', 'C'],
-        include_lowest=True
+    # Priority 1: Class A (70-80% value, 10-20% quantity)
+    a_mask = (
+        (df_sorted['cum_value'] >= 0.7) & 
+        (df_sorted['cum_value'] <= 0.8) & 
+        (df_sorted['cum_quantity'] >= 0.1) & 
+        (df_sorted['cum_quantity'] <= 0.2)
     )
+    df_sorted.loc[a_mask, 'abc_class'] = 'A'
     
-    HARD_CODED_ACOS = '3-8%'
-    df_sorted['suggest_ACOS'] = HARD_CODED_ACOS
+    # Priority 2: Class B (15-25% value, 20-30% quantity) - excluding already classified A's
+    b_mask = (
+        (df_sorted['cum_value'] >= 0.15) & 
+        (df_sorted['cum_value'] <= 0.25) & 
+        (df_sorted['cum_quantity'] >= 0.2) & 
+        (df_sorted['cum_quantity'] <= 0.3) & 
+        (~a_mask)  # Exclude A-classified items
+    )
+
+    df_sorted.loc[b_mask, 'abc_class'] = 'B'
+
+    df_sorted.drop(columns=['cum_value', 'cum_quantity'])
     
-    df_sorted = df_sorted.drop(columns=['cumulative_pct'])
     return df_sorted
 
 async def process_user(session, user_id, go_bots_data):
