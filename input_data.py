@@ -281,7 +281,7 @@ async def process_user(session, user_id, go_bots_data):
         store_name = df['store_name'].iloc[0]
         df['quality_score'] = df['quality_score'].astype('Int64')
         df['position'] = df['position'].astype('Int64')
-        df.to_csv(f'output_tables/{store_name}_{user_id}.csv', index=False)
+        df.to_csv(f'output_tables/{store_name}__{user_id}.csv', index=False)
         logger.info(f"Processed user {user_id}, store name: {store_name}")
     else:
         logger.info(f"No data for user {user_id}")
