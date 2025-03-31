@@ -124,6 +124,7 @@ async def get_batch_item_details(session, item_ids, access_token):
                     'permalink': item_data.get('permalink'),
                     'image_url': item_data["pictures"][0]["secure_url"] if item_data.get("pictures") else None,
                     'stock': stock,
+                    'catalog_listing': item_data.get('catalog_listing', False),
                 }
         return details
 
@@ -180,7 +181,8 @@ async def process_item(session, item_id, date_from, date_to, access_token, store
             'quality_score': quality_score,
             'stock': details['stock'],
             'image_url': details['image_url'],
-            'position': position
+            'position': position,
+            'catalog_listing': "Sim" if details['catalog_listing'] else "Não",
         }
     return None
 
