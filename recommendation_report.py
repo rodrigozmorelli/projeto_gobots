@@ -1,5 +1,6 @@
 import asyncio
 import io
+import logging
 import os
 import subprocess
 
@@ -8,6 +9,14 @@ import pandas as pd
 from jinja2 import Environment, FileSystemLoader
 from playwright.async_api import async_playwright
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[f"{__file__}.log", logging.StreamHandler()],
+    filemode="a",
+)
+
+logger = logging.getLogger()
 
 async def read_input(input_file):
     async with aiofiles.open(input_file, mode='r', encoding="utf-8") as f:
@@ -102,13 +111,13 @@ async def convert_html_to_pdf(html_content, pdf_output_path):
             with open(pdf_output_path, 'wb') as f:
                 f.write(proc.stdout)
             
-            print(f"Successfull PDF conversion: {pdf_output_path}")
+            logger.info(f"Successfull PDF conversion: {pdf_output_path}")
             return True
 
     except Exception as e:
         if os.path.exists(pdf_output_path):
             os.remove(pdf_output_path)
-        print(f"Error during PDF conversion: {str(e)}")
+        logger.info(f"Error during PDF conversion: {str(e)}, file: {pdf_output_path}")
         return False
 async def process_file(semaphore, file):
     try:
@@ -162,7 +171,7 @@ async def main():
     results = await asyncio.gather(*tasks)
     
     for result in results:
-        print(result)
+        logger.info(result)
 
 if __name__ == '__main__':
     asyncio.run(main())
