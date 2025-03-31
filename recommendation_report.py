@@ -69,7 +69,7 @@ async def convert_html_to_pdf(html_content, pdf_output_path):
             browser = await p.chromium.launch()
             page = await browser.new_page()
             
-            await page.set_content(html_content)
+            await page.set_content(html_content, timeout=80_000)
             
             pdf_bytes = await page.pdf(
                 width="14.8in",
