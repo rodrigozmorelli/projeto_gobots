@@ -1,11 +1,20 @@
 import asyncio
+import logging
+import os
 from collections import defaultdict
 from datetime import datetime, timedelta
-import os
 
 import aiohttp
 import pandas as pd
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[f"{__file__}.log", logging.StreamHandler()],
+    filemode="a",
+)
+
+logger = logging.getLogger()
 
 # ======================================================
 # 1) AUTENTICAÇÃO & CONFIG
@@ -58,7 +67,7 @@ async def get_all_items_with_sales(session, date_from, date_to, user_id, access_
         params['offset'] = offset
         async with session.get(url, headers=headers, params=params) as response:
             if response.status != 200:
-                print(f"Erro na requisição: {response.status}, user id: {user_id}")
+                logger.info(f"Erro na requisição: {response.status}, user id: {user_id}")
                 break
             
             data = await response.json()
@@ -263,7 +272,7 @@ def calculate_metrics(df):
 async def process_user(session, user_id, go_bots_data):
     access_token = get_access_token_from_gobots_api(user_id, go_bots_data)
     if not access_token:
-        print(f"No access token for user {user_id}")
+        logger.info(f"No access token for user {user_id}")
         return
 
     df = await build_output(session, user_id, access_token, 30)
@@ -273,9 +282,9 @@ async def process_user(session, user_id, go_bots_data):
         df['quality_score'] = df['quality_score'].astype('Int64')
         df['position'] = df['position'].astype('Int64')
         df.to_csv(f'output_tables/{store_name}_{user_id}.csv', index=False)
-        print(f"Processed user {user_id}")
+        logger.info(f"Processed user {user_id}, store name: {store_name}")
     else:
-        print(f"No data for user {user_id}")
+        logger.info(f"No data for user {user_id}")
 
 async def main():
     os.makedirs('output_tables', exist_ok=True)
@@ -286,7 +295,7 @@ async def main():
     async with aiohttp.ClientSession() as session:
         go_bots_data = await get_go_bots_api_response(session)
         if not go_bots_data:
-            print("Failed to fetch GoBots data")
+            logger.info("Failed to fetch GoBots data")
             return
         
         tasks = [process_user(session, uid, go_bots_data) for uid in user_ids]

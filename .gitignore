@@ -12,3 +12,4 @@ gobots_token.txt
 go_bots_api_output.txt
 test.py
 .env
+*.log
