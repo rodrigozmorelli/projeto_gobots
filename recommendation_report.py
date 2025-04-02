@@ -12,8 +12,7 @@ from playwright.async_api import async_playwright
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[f"{__file__}.log", logging.StreamHandler()],
-    filemode="a",
+    handlers=[logging.FileHandler(f"{__file__}.log"), logging.StreamHandler()],
 )
 
 logger = logging.getLogger()

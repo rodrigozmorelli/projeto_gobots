@@ -10,8 +10,7 @@ import pandas as pd
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[f"{__file__}.log", logging.StreamHandler()],
-    filemode="a",
+    handlers=[logging.FileHandler(f"{__file__}.log"), logging.StreamHandler()],
 )
 
 logger = logging.getLogger()
