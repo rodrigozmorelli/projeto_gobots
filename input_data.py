@@ -234,39 +234,30 @@ async def build_output(session, user_id, access_token, days_window):
 def calculate_metrics(df):
     df['conversion'] = df['sales']/df['visits']
     df['sales_potential'] = df['conversion'] * df['price']
-    df_sorted = df.sort_values('sales_potential', ascending=False).reset_index(drop=True)
+    df_sorted = df.sort_values('sales', ascending=False).reset_index(drop=True)
     
-    total_potential = df_sorted['sales_potential'].sum()
-    total_items = len(df_sorted)
+    total_sales = df_sorted['sales'].sum()
     
-    df_sorted['cum_value'] = (df_sorted['sales_potential'].cumsum() / total_potential).round(2)
-    df_sorted['cum_quantity'] = ((df_sorted.index + 1) / total_items).round(2)
+    df_sorted['cum_value'] = (df_sorted['sales'].cumsum() / total_sales).round(2)
     
     df_sorted['abc_class'] = 'C'
     
-    # Priority 1: Class A (70-80% value, 10-20% quantity)
-    a_mask = (
-        (df_sorted['cum_value'] >= 0.7) & 
-        (df_sorted['cum_value'] <= 0.8) & 
-        (df_sorted['cum_quantity'] >= 0.1) & 
-        (df_sorted['cum_quantity'] <= 0.2)
-    )
+    a_mask = df_sorted['cum_value'] <= 0.8 
     df_sorted.loc[a_mask, 'abc_class'] = 'A'
     
-    # Priority 2: Class B (15-25% value, 20-30% quantity) - excluding already classified A's
     b_mask = (
-        (df_sorted['cum_value'] >= 0.15) & 
-        (df_sorted['cum_value'] <= 0.25) & 
-        (df_sorted['cum_quantity'] >= 0.2) & 
-        (df_sorted['cum_quantity'] <= 0.3) & 
+        (df_sorted['cum_value'] > 0.8) &
+        (df_sorted['cum_value'] <= 0.95) & 
         (~a_mask)  # Exclude A-classified items
     )
 
     df_sorted.loc[b_mask, 'abc_class'] = 'B'
 
-    df_sorted.drop(columns=['cum_value', 'cum_quantity'])
+    df_sorted.drop(columns=['cum_value'])
+
+    df_sorted_final = df_sorted.sort_values('sales_potential', ascending=False).reset_index(drop=True)
     
-    return df_sorted
+    return df_sorted_final
 
 async def process_user(session, user_id, go_bots_data):
     access_token = get_access_token_from_gobots_api(user_id, go_bots_data)
