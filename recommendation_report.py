@@ -145,7 +145,7 @@ async def process_file(semaphore, file):
             page_title_text='Recomendação de Produtos'
         )
         
-        new_filename = file.split("__").removesuffix(".csv")
+        new_filename = file.split("__")[0].removesuffix(".csv")
         pdf_path = f'output_pdf/Relatório Ads {new_filename}.pdf'
         async with semaphore:
             success = await convert_html_to_pdf(html_output, pdf_path)
